@@ -2,7 +2,7 @@
 // Copyright (c) 2023 Manuel Stoiber, German Aerospace Center (DLR)
 
 #include <filesystem/filesystem.h>
-#include <m3t/azure_kinect_camera.h>
+#include "m3t/cameras/azure_kinect_camera.h"
 #include <m3t/image_viewer.h>
 #include <m3t/tracker.h>
 

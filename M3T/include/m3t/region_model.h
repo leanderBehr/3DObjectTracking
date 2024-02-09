@@ -170,6 +170,13 @@ class RegionModel : public Model {
   const std::vector<std::shared_ptr<Body>> &movable_same_region_body_ptrs()
       const;
 
+    // Helper methods for view generation
+  bool GeneratePointData(const FullSilhouetteRenderer &main_renderer,
+                         const AssociatedRendererPtrs &associated_renderer_ptrs,
+                         const Transform3fA &camera2body_pose,
+                         std::vector<DataPoint> *data_points,
+                         float *contour_length) const;
+
  private:
   // Helper methods for model set up
   bool LoadMetaData();
@@ -193,12 +200,7 @@ class RegionModel : public Model {
       const AssociatedRendererPtrs &associated_renderer_ptrs,
       const Transform3fA &camera2world_pose);
 
-  // Helper methods for view generation
-  bool GeneratePointData(const FullSilhouetteRenderer &main_renderer,
-                         const AssociatedRendererPtrs &associated_renderer_ptrs,
-                         const Transform3fA &camera2body_pose,
-                         std::vector<DataPoint> *data_points,
-                         float *contour_length) const;
+
 
   // Helper methods for contour generation
   bool GenerateValidContours(const cv::Mat &silhouette_image,

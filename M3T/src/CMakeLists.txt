@@ -14,7 +14,7 @@ set(SOURCES
         region_model.cpp
         depth_model.cpp
         camera.cpp
-        loader_camera.cpp
+        cameras/loader_camera.cpp
         viewer.cpp
         image_viewer.cpp
         normal_viewer.cpp 
@@ -33,7 +33,10 @@ set(SOURCES
         refiner.cpp
         publisher.cpp
         subscriber.cpp
-        tracker.cpp)
+        tracker.cpp
+        cameras/opencv_camera.cpp
+        cameras/video_file_camera.cpp
+)
 
 set(HEADERS 
         ../include/m3t/common.h
@@ -47,7 +50,7 @@ set(HEADERS
         ../include/m3t/region_model.h
         ../include/m3t/depth_model.h
         ../include/m3t/camera.h
-        ../include/m3t/loader_camera.h
+        ../include/m3t/cameras/loader_camera.h
         ../include/m3t/viewer.h
         ../include/m3t/image_viewer.h
         ../include/m3t/normal_viewer.h
@@ -67,15 +70,18 @@ set(HEADERS
         ../include/m3t/publisher.h
         ../include/m3t/subscriber.h
         ../include/m3t/tracker.h
-        ../include/m3t/generator.h)
+        ../include/m3t/generator.h
+        ../include/m3t/cameras/opencv_camera.h
+        ../include/m3t/cameras/video_file_camera.h
+        ../include/m3t/clock.h)
 
 if (USE_AZURE_KINECT)
-    list(APPEND SOURCES azure_kinect_camera.cpp)
-    list(APPEND HEADERS ../include/m3t/azure_kinect_camera.h)
+    list(APPEND SOURCES cameras/azure_kinect_camera.cpp)
+    list(APPEND HEADERS ../include/m3t/cameras/azure_kinect_camera.h)
 endif ()
 if (USE_REALSENSE)
-    list(APPEND SOURCES realsense_camera.cpp)
-    list(APPEND HEADERS ../include/m3t/realsense_camera.h)
+    list(APPEND SOURCES cameras/realsense_camera.cpp)
+    list(APPEND HEADERS ../include/m3t/cameras/realsense_camera.h)
 endif ()
 
 

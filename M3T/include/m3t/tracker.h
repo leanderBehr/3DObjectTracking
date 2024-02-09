@@ -104,6 +104,9 @@ class Tracker {
   bool AddSubscriber(const std::shared_ptr<Subscriber> &subscriber_ptr);
   bool DeleteSubscriber(const std::string &name);
   void ClearSubscribers();
+  bool AddKeyCallback(const std::string &name, std::function<void(char)>);
+  bool DeleteKeyCallback(const std::string &name);
+  void ClearKeyCallbacks();
 
   // Setters
   void set_name(const std::string &name);
@@ -204,6 +207,8 @@ class Tracker {
   void AssembleDerivedObjectPtrs();
   bool SetUpAllObjects();
   bool AreAllObjectsSetUp();
+  char WaitForKey(int delay);
+  void ProcessKeyPress();
 
   // Objects
   std::vector<std::shared_ptr<Optimizer>> optimizer_ptrs_{};
@@ -224,6 +229,7 @@ class Tracker {
   std::vector<std::shared_ptr<Renderer>> correspondence_renderer_ptrs_{};
   std::vector<std::shared_ptr<Renderer>> results_renderer_ptrs_{};
   std::vector<std::shared_ptr<ColorHistograms>> color_histograms_ptrs_{};
+  std::map<std::string, std::function<void(char)>> key_callbacks_{};
 
   // Parameters
   std::string name_{};
@@ -260,6 +266,7 @@ class Tracker {
   bool quit_tracker_process_ = false;
   bool set_up_ = false;
   std::mutex tracking_mutex_{};
+  std::optional<char> pressed_key_{};
 };
 
 }  // namespace m3t

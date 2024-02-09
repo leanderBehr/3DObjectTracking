@@ -8,7 +8,7 @@
 #include <m3t/body.h>
 #include <m3t/common.h>
 #include <m3t/link.h>
-#include <m3t/loader_camera.h>
+#include <m3t/cameras/loader_camera.h>
 #include <m3t/modality.h>
 #include <m3t/normal_viewer.h>
 #include <m3t/optimizer.h>

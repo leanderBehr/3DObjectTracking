@@ -1,0 +1,20 @@
+%YAML:1.2
+name: right_camera
+video_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\Endoscope_Recordings\Stereo_Hook_Simple_Background\Video2.avi'
+timestamp_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\Endoscope_Recordings\Stereo_Hook_Simple_Background\Windows_timestamps_Video2.txt'
+intrinsics:
+  f_u: 613.609
+  f_v: 615.433
+  pp_x: 900.113
+  pp_y: 533.67
+  width: 1920
+  height: 1080
+distortion_coefficients: [0.083272,-0.252131,-0.000266028,0.00157335,0.144766]
+camera2world_pose: !!opencv-matrix
+  rows: 4
+  cols: 4
+  dt: d
+  data: [ 0.995966, 0.00243404, 0.0896933, -0.000382097,
+          -0.00313211, 0.999966, 0.00764297, -0.0000427706 ,
+          -0.0896716, -0.00789307, 0.99594, 0.000104822,
+          0, 0, 0, 1 ]

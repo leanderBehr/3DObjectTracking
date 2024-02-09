@@ -60,6 +60,7 @@ class Camera {
   bool save_images() const;
   bool set_up() const;
 
+  virtual ~Camera() = default;
  protected:
   // Constructor
   Camera(const std::string &name);

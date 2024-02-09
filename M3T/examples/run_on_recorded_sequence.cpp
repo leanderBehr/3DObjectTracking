@@ -5,7 +5,7 @@
 #include <m3t/basic_depth_renderer.h>
 #include <m3t/body.h>
 #include <m3t/common.h>
-#include <m3t/loader_camera.h>
+#include <m3t/cameras/loader_camera.h>
 #include <m3t/manual_detector.h>
 #include <m3t/normal_viewer.h>
 #include <m3t/region_modality.h>

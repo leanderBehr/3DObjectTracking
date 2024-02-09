@@ -1,0 +1,14 @@
+%YAML:1.2
+name: left_camera
+video_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Mono_Hook_Working_Channel_Yellow\Video1.avi'
+timestamp_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Mono_Hook_Working_Channel_Yellow\Windows_timestamps_Video1.txt'
+intrinsics:
+  f_u: 813.405922
+  f_v: 814.7103415
+  pp_x: 955.2861138
+  pp_y: 534.4625209
+  width: 1920
+  height: 1080
+distortion_coefficients: [-0.418753279081834,0.187401363603572,0.000143339697368425,-0.000954838892401051,-0.0394059401606923]
+#distortion_coefficients: [0,0,0,0,0]
+

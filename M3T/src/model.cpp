@@ -353,9 +353,9 @@ void Model::CalculateDepthOffsets(
 
   // Calculate limits for iteration
   int v_min = std::max(center.y - image_radius_minus, 0);
-  int v_max = std::min(center.y + image_radius_plus, image_size_ - 1);
+  int v_max = std::min(center.y + image_radius_plus, renderer.intrinsics().height - 1);
   int u_min = std::max(center.x - image_radius_minus, 0);
-  int u_max = std::min(center.x + image_radius_plus, image_size_ - 1);
+  int u_max = std::min(center.x + image_radius_plus, renderer.intrinsics().width - 1);
 
   // Iterate image to find minimum values corresponding to a certain radius
   int v, u, i;

@@ -118,6 +118,8 @@ bool RegionModel::GetClosestView(const Transform3fA &body2camera_pose,
       body2camera_pose.rotation().inverse() *
       body2camera_pose.translation().matrix().normalized()};
 
+  std::cout << "orientation norm " << orientation.norm() << "\n";
+
   float closest_dot = -1.0f;
   for (auto &view : views_) {
     float dot = orientation.dot(view.orientation);
@@ -126,6 +128,8 @@ bool RegionModel::GetClosestView(const Transform3fA &body2camera_pose,
       closest_dot = dot;
     }
   }
+  std::cout << "closest_dot " << closest_dot << "\n";
+
   return true;
 }
 
@@ -145,13 +149,13 @@ const std::vector<std::shared_ptr<Body>> &RegionModel::movable_body_ptrs()
   return movable_body_ptrs_;
 }
 
-const std::vector<std::shared_ptr<Body>>
-    &RegionModel::fixed_same_region_body_ptrs() const {
+const std::vector<std::shared_ptr<Body>> &
+RegionModel::fixed_same_region_body_ptrs() const {
   return fixed_same_region_body_ptrs_;
 }
 
-const std::vector<std::shared_ptr<Body>>
-    &RegionModel::movable_same_region_body_ptrs() const {
+const std::vector<std::shared_ptr<Body>> &
+RegionModel::movable_same_region_body_ptrs() const {
   return movable_same_region_body_ptrs_;
 }
 
@@ -237,6 +241,10 @@ bool RegionModel::GenerateModel() {
       // Generate data
       views_[i].orientation =
           camera2body_poses[i].matrix().col(2).segment(0, 3);
+
+      // std::cout << "views_[i].orientation " << views_[i].orientation << "\n";
+      // std::cout << "translation " << camera2body_poses[i] << "\n";
+
       views_[i].data_points.resize(n_points_);
       if (!GeneratePointData(*main_renderer_ptr, associated_renderer_ptrs,
                              camera2body_poses[i], &views_[i].data_points,
@@ -487,9 +495,14 @@ bool RegionModel::GeneratePointData(
   // Generate contours
   int pixel_contour_length;
   std::vector<std::vector<cv::Point2i>> contours;
-  if (!GenerateValidContours(silhouette_image, &contours,
-                             &pixel_contour_length))
+  if (!GenerateValidContours(silhouette_image, &contours, &pixel_contour_length))
     return false;
+
+  //cv::Mat silhouette_display{};
+  //cv::resize(silhouette_image, silhouette_display, cv::Size(), 0.5, 0.5);
+  //cv::imshow("silhouette", silhouette_display);
+  //cv::waitKey();
+
   if (pixel_contour_length == 0) {
     *contour_length = 0.0f;
     return true;
@@ -500,11 +513,31 @@ bool RegionModel::GeneratePointData(
   float pixel_to_meter = sphere_radius_ / main_renderer.intrinsics().fu;
   float max_depth_difference = pixel_to_meter * kMaxSurfaceGradient;
   for (auto &contour : contours) {
+    //cv::Mat vis_img = silhouette_image;
+
+    //for (auto &p : contour) {
+    //  cv::circle(vis_img, p, 2, 128, cv::FILLED);
+    //}
+
+    //cv::resize(silhouette_image, vis_img, cv::Size(), 0.5, 0.5);
+    //cv::imshow("contour", vis_img);
+    //cv::waitKey();
+
     for (auto &point : contour) {
       if (IsContourPointValid(max_depth_difference, point, main_renderer,
                               associated_renderer_ptrs))
         valid_contour_points.push_back(point);
     }
+
+    // vis_img = silhouette_image;
+
+    // for (auto &p : valid_contour_points) {
+    //   cv::circle(vis_img, p, 2, 128, cv::FILLED);
+    // }
+
+    // cv::resize(silhouette_image, vis_img, cv::Size(), 0.5, 0.5);
+    // cv::imshow("valid contour", vis_img);
+    // cv::waitKey();
   }
   *contour_length = float(valid_contour_points.size()) * pixel_to_meter;
   if (*contour_length == 0.0f) return true;
@@ -529,6 +562,17 @@ bool RegionModel::GeneratePointData(
         SampleContourPointCoordinate(valid_contour_points, generator);
     Eigen::Vector3f center_f_camera{main_renderer.PointVector(center)};
     data_point->center_f_body = camera2body_pose * center_f_camera;
+
+    // auto center_u = center_f_camera(0) * main_renderer.intrinsics().fu /
+    //                     center_f_camera(2) +
+    //                 main_renderer.intrinsics().ppu;
+
+    // auto center_v = center_f_camera(1) * main_renderer.intrinsics().fv /
+    //                     center_f_camera(2) +
+    //                 main_renderer.intrinsics().ppv;
+
+    // auto norm = cv::norm(static_cast<cv::Point2f>(center) -
+    // cv::Point2f(center_u, center_v)); assert(norm <= 10);
 
     // Calculate contour segment and approximate normal vector
     std::vector<cv::Point2i> contour_segment;
@@ -576,6 +620,15 @@ bool RegionModel::GenerateValidContours(
 
   // Test if contours are closed
   for (auto &contour : *contours) {
+    // for (auto &point : contour) {
+    //   cv::circle(main_body_silhouette_image, point, 1, 128, cv::FILLED);
+    // }
+    //
+    // cv::Mat resized;
+    // cv::resize(main_body_silhouette_image, resized, cv::Size(), 0.5, 0.5);
+    // cv::imshow("silhouette_image", resized);
+    // cv::waitKey(0);
+
     if (abs(contour.front().x - contour.back().x) > 1 ||
         abs(contour.front().y - contour.back().y) > 1) {
       std::cerr << "Contours are not closed." << std::endl;
@@ -600,6 +653,15 @@ bool RegionModel::IsContourPointValid(
     float max_depth_difference, const cv::Point2i &image_coordinates,
     const FullSilhouetteRenderer &main_renderer,
     const AssociatedRendererPtrs &associated_renderer_ptrs) {
+  auto min_width = main_renderer.intrinsics().width * 0.01;
+  auto max_width = main_renderer.intrinsics().width * 0.99;
+  auto min_height = main_renderer.intrinsics().height * 0.01;
+  auto max_height = main_renderer.intrinsics().height * 0.99;
+
+  if (image_coordinates.x < min_width || image_coordinates.x > max_width ||
+      image_coordinates.y < min_height || image_coordinates.y > max_height)
+    return false;
+
   std::vector<cv::Point2i> neighboring_points = {
       cv::Point2i(image_coordinates.x, image_coordinates.y + 1),
       cv::Point2i(image_coordinates.x, image_coordinates.y - 1),
@@ -691,6 +753,10 @@ Eigen::Vector2f RegionModel::ApproximateNormalVector(
       .normalized();
 }
 
+bool is_in_bounds(Intrinsics intrinsics, int x, int y) {
+  return x >= 0 && x < intrinsics.width && y >= 0 && y < intrinsics.height;
+}
+
 void RegionModel::CalculateLineDistances(
     const FullSilhouetteRenderer &main_renderer,
     const AssociatedRendererPtrs &associated_renderer_ptrs,
@@ -731,6 +797,11 @@ void RegionModel::CalculateLineDistances(
   while (true) {
     u_in -= u_step;
     v_in -= v_step;
+    if (!is_in_bounds(main_renderer.intrinsics(), u_in, v_in)) {
+      *foreground_distance = std::numeric_limits<float>::max();
+      break;
+    }
+
     if (foreground_silhouette_image->at<uchar>(int(v_in), int(u_in)) !=
         kMainBodyID) {
       FindClosestContourPoint(contours, u_in + u_step - 0.5f,
@@ -748,8 +819,7 @@ void RegionModel::CalculateLineDistances(
   while (true) {
     u_out += u_step;
     v_out += v_step;
-    if (int(u_out) < 0 || int(u_out) >= image_size_ || int(v_out) < 0 ||
-        int(v_out) >= image_size_) {
+    if (!is_in_bounds(main_renderer.intrinsics(), u_out, v_out)) {
       *background_distance = std::numeric_limits<float>::max();
       break;
     }

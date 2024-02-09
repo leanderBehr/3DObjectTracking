@@ -52,3 +52,10 @@ if (USE_AZURE_KINECT)
     add_executable(run_on_camera_sequence run_on_camera_sequence.cpp)
     target_link_libraries(run_on_camera_sequence PUBLIC m3t)
 endif ()
+
+add_executable(record_opencv_camera_sequence record_opencv_camera_sequence.cpp)
+target_link_libraries(record_opencv_camera_sequence PUBLIC m3t)
+
+add_executable(run_on_opencv_camera_sequence run_on_opencv_camera_sequence.cpp)
+target_link_libraries(run_on_opencv_camera_sequence PUBLIC m3t)
+

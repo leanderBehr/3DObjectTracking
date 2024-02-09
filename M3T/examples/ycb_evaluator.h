@@ -10,7 +10,7 @@
 #include <m3t/depth_modality.h>
 #include <m3t/depth_model.h>
 #include <m3t/link.h>
-#include <m3t/loader_camera.h>
+#include <m3t/cameras/loader_camera.h>
 #include <m3t/normal_viewer.h>
 #include <m3t/region_modality.h>
 #include <m3t/region_model.h>

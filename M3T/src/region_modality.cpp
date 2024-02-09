@@ -11,7 +11,16 @@ RegionModality::RegionModality(
     const std::shared_ptr<RegionModel> &region_model_ptr)
     : Modality{name, body_ptr},
       color_camera_ptr_{color_camera_ptr},
-      region_model_ptr_{region_model_ptr} {}
+      region_model_ptr_{region_model_ptr} {
+  auto renderer_name = this->name() + "full_silhouette_renderer";
+  auto renderer_geometry = std::make_shared<RendererGeometry>(renderer_name + "geometry");
+  renderer_geometry->AddBody(body_ptr);
+  body_ptr->set_region_id(255);
+
+  full_silhouette_renderer_ptr_ = std::make_shared<FullSilhouetteRenderer>(
+      name, renderer_geometry, Transform3fA::Identity(),
+      color_camera_ptr_->intrinsics(), IDType::REGION, 0.0001, 0.5);
+}
 
 RegionModality::RegionModality(
     const std::string &name, const std::filesystem::path &metafile_path,
@@ -60,6 +69,12 @@ bool RegionModality::SetUp() {
   if (use_region_checking_ && !silhouette_renderer_ptr_->set_up()) {
     std::cerr << "Focused silhouette renderer "
               << silhouette_renderer_ptr_->name() << " was not set up"
+              << std::endl;
+    return false;
+  }
+  if (!full_silhouette_renderer_ptr_->set_up()) {
+    std::cerr << "Full silhouette renderer "
+              << full_silhouette_renderer_ptr_->name() << " was not set up"
               << std::endl;
     return false;
   }
@@ -393,6 +408,8 @@ bool RegionModality::CalculateCorrespondences(int iteration,
 
   PrecalculatePoseVariables();
   PrecalculateIterationDependentVariables(corr_iteration);
+  full_silhouette_renderer_ptr_->StartRendering();
+  full_silhouette_renderer_ptr_->FetchSilhouetteImage();
 
   // Check if body is visible and fetch images from renderers
   bool body_visible_depth;
@@ -409,9 +426,40 @@ bool RegionModality::CalculateCorrespondences(int iteration,
   }
 
   // Search closest template view
-  const RegionModel::View *view;
-  region_model_ptr_->GetClosestView(body2camera_pose_, &view);
+  // const RegionModel::View *view;
+  // region_model_ptr_->GetClosestView(body2camera_pose_, &view);
+
+  RegionModel::View view_val;
+  view_val.data_points.resize(region_model_ptr_->n_points());
+
+  region_model_ptr_->GeneratePointData(
+      *full_silhouette_renderer_ptr_,
+      {},
+      body2camera_pose_.inverse(),
+      &view_val.data_points,
+      &view_val.contour_length);
+  auto view = &view_val;
+
   auto &data_model_points{view->data_points};
+
+  //cv::Mat mat1 = cv::Mat::zeros(color_camera_ptr()->intrinsics().height,
+  //                              color_camera_ptr()->intrinsics().width, CV_32F);
+  //cv::Mat mat2;
+  //color_camera_ptr()->image().copyTo(mat2);
+
+  //cv::Mat mat3;
+  //full_silhouette_renderer_ptr_->silhouette_image().copyTo(mat3);
+
+  //for (auto &mat : {mat3}) {
+  //  for (auto &p : data_model_points) {
+  //    DataLine line;
+  //    CalculateBasicLineData(p, &line);
+  //    cv::circle(mat, cv::Point(line.center_u, line.center_v), 2, 128,
+  //               cv::FILLED);
+  //  }
+
+  //  cv::imshow("", mat);
+  //}
 
   // Scale number of lines with contour_length ratio
   int n_lines = n_lines_max_;
@@ -432,6 +480,11 @@ bool RegionModality::CalculateCorrespondences(int iteration,
   // Differentiate cases with and without occlusion handling
   std::vector<float> segment_probabilities_f(line_length_in_segments_);
   std::vector<float> segment_probabilities_b(line_length_in_segments_);
+
+  std::size_t considered_lines = 0;
+  std::size_t invalid_lines = 0;
+  std::size_t probability_failure_lines = 0;
+
   for (int j = 0; j < 2; ++j) {
     data_lines_.clear();
     bool handle_occlusions =
@@ -444,14 +497,21 @@ bool RegionModality::CalculateCorrespondences(int iteration,
       if (!IsLineValid(
               data_line, use_region_checking_ && body_visible_silhouette,
               handle_occlusions && measure_occlusions_,
-              handle_occlusions && model_occlusions_ && body_visible_depth))
+              handle_occlusions && model_occlusions_ && body_visible_depth)) {
+        invalid_lines += 1;
         continue;
+      }
       if (!CalculateSegmentProbabilities(
               data_line.center_u, data_line.center_v, data_line.normal_u,
               data_line.normal_v, &segment_probabilities_f,
               &segment_probabilities_b, &data_line.normal_component_to_scale,
-              &data_line.delta_r))
+              &data_line.delta_r)) {
+        probability_failure_lines += 1;
         continue;
+      }
+
+      considered_lines += 1;
+
       CalculateDistribution(segment_probabilities_f, segment_probabilities_b,
                             &data_line.distribution);
 
@@ -459,6 +519,14 @@ bool RegionModality::CalculateCorrespondences(int iteration,
                                    &data_line.measured_variance);
       data_lines_.push_back(std::move(data_line));
     }
+
+    //std::cout << "total " << n_lines << "; considered " << considered_lines
+    //          << "; invalid " << invalid_lines << "; probability calc failed "
+    //          << probability_failure_lines << ";\n";
+
+    assert(n_lines - invalid_lines - probability_failure_lines ==
+           considered_lines);
+
     if (data_lines_.size() >= min_n_unoccluded_lines_) break;
   }
   return true;
@@ -534,11 +602,13 @@ bool RegionModality::CalculateGradientAndHessian(int iteration,
         data_line.normal_component_to_scale * data_line.normal_v * fv_z,
         data_line.normal_component_to_scale *
             (-data_line.normal_u * xfu_z - data_line.normal_v * yfv_z) / z};
-    Eigen::RowVector3f ddelta_cs_dtranslation{ddelta_cs_dcenter *
-                                              body2camera_rotation_};
+    Eigen::RowVector3f ddelta_cs_dtranslation{ddelta_cs_dcenter * body2camera_rotation_};
+
+    ddelta_cs_dtranslation *= (z * 1000);
+
     Eigen::Matrix<float, 1, 6> ddelta_cs_dtheta;
-    ddelta_cs_dtheta << data_line.center_f_body.transpose().cross(
-        ddelta_cs_dtranslation),
+    ddelta_cs_dtheta << 
+        data_line.center_f_body.transpose().cross(ddelta_cs_dtranslation),
         ddelta_cs_dtranslation;
 
     // Calculate weight
@@ -605,13 +675,13 @@ const std::shared_ptr<RegionModel> &RegionModality::region_model_ptr() const {
   return region_model_ptr_;
 }
 
-const std::shared_ptr<FocusedDepthRenderer>
-    &RegionModality::depth_renderer_ptr() const {
+const std::shared_ptr<FocusedDepthRenderer> &
+RegionModality::depth_renderer_ptr() const {
   return depth_renderer_ptr_;
 }
 
-const std::shared_ptr<FocusedSilhouetteRenderer>
-    &RegionModality::silhouette_renderer_ptr() const {
+const std::shared_ptr<FocusedSilhouetteRenderer> &
+RegionModality::silhouette_renderer_ptr() const {
   return silhouette_renderer_ptr_;
 }
 
@@ -630,7 +700,8 @@ RegionModality::start_modality_renderer_ptrs() const {
 
 std::vector<std::shared_ptr<Renderer>>
 RegionModality::correspondence_renderer_ptrs() const {
-  return {depth_renderer_ptr_, silhouette_renderer_ptr_};
+  return {depth_renderer_ptr_, silhouette_renderer_ptr_,
+          full_silhouette_renderer_ptr_};
 }
 
 std::vector<std::shared_ptr<Renderer>> RegionModality::results_renderer_ptrs()
@@ -1017,16 +1088,29 @@ void RegionModality::PrecalculateIterationDependentVariables(
   line_length_minus_1_half_ = float(line_length_ - 1) * 0.5f;
   line_length_half_minus_1_ = float(line_length_) * 0.5f - 1.0f;
 
-  float standard_deviation =
-      LastValidValue(standard_deviations_, corr_iteration);
+  float standard_deviation = LastValidValue(standard_deviations_, corr_iteration);
   variance_ = powf(standard_deviation, 2.0f);
 }
 
 void RegionModality::AddLinePixelColorsToTempHistograms(
     bool handle_occlusions) {
+  full_silhouette_renderer_ptr_->StartRendering();
+  full_silhouette_renderer_ptr_->FetchSilhouetteImage();
+  full_silhouette_renderer_ptr_->FetchDepthImage();
+
   const cv::Mat &image{color_camera_ptr_->image()};
-  const RegionModel::View *view;
-  region_model_ptr_->GetClosestView(body2camera_pose_, &view);
+  // const RegionModel::View *view;
+  // region_model_ptr_->GetClosestView(body2camera_pose_, &view);
+
+  RegionModel::View view_val;
+  view_val.data_points.resize(region_model_ptr_->n_points());
+  region_model_ptr_->GeneratePointData(
+      *full_silhouette_renderer_ptr_,
+      {},
+      body2camera_pose_.inverse(),
+      &view_val.data_points,
+      &view_val.contour_length);
+  auto view = &view_val;
 
   // Check if body is visible and fetch images from renderers
   bool body_visible_depth;
@@ -1058,6 +1142,10 @@ void RegionModality::AddLinePixelColorsToTempHistograms(
     n_lines = view->data_points.size();
   }
 
+  std::size_t considered_lines = 0;
+  std::size_t not_in_image = 0;
+  std::size_t negative_z = 0;
+
   // Iterate over n_lines
   for (int i = 0; i < n_lines; ++i) {
     const auto &data_point{view->data_points[i]};
@@ -1065,14 +1153,19 @@ void RegionModality::AddLinePixelColorsToTempHistograms(
     // Calculate center in image coordinates
     Eigen::Vector3f center_f_camera{body2camera_pose_ *
                                     data_point.center_f_body};
-    if (center_f_camera(2) <= 0.0f) continue;
+    if (center_f_camera(2) <= 0.0f) {
+      negative_z += 1;
+      continue;
+    }
     float center_u = center_f_camera(0) * fu_ / center_f_camera(2) + ppu_;
     float center_v = center_f_camera(1) * fv_ / center_f_camera(2) + ppv_;
     int i_center_u = int(center_u + 0.5f);
     int i_center_v = int(center_v + 0.5f);
-    if (i_center_u < 0.0f || i_center_u > image_width_minus_1_ ||
-        i_center_v < 0 || i_center_v > image_height_minus_1_)
+
+    if (!IsPointInImage({i_center_u, i_center_v})) {
+      not_in_image += 1;
       continue;
+    }
 
     // Handle occlusions
     if (handle_occlusions) {
@@ -1151,7 +1244,13 @@ void RegionModality::AddLinePixelColorsToTempHistograms(
       u += u_step;
       v += v_step;
     }
+    considered_lines += 1;
   }
+
+  // std::cout << "total " << n_lines << "; considered " << considered_lines
+  //           << "; not in image " << not_in_image  << "; negative z " <<
+  //           negative_z << ";\n";
+  // assert(n_lines - not_in_image - negative_z == considered_lines);
 }
 
 void RegionModality::DynamicRegionDistance(
@@ -1249,6 +1348,20 @@ void RegionModality::CalculateBasicLineData(
       fu_ / (center_f_camera(2) * fscale_);
 }
 
+bool RegionModality::IsPointInImage(cv::Point2i point) const {
+  cv::Point2i image_center{color_camera_ptr()->intrinsics().width / 2,
+                           color_camera_ptr()->intrinsics().height / 2};
+
+  bool in_frame_rect =
+      image_center.x >= 0 || image_center.x <= image_width_minus_1_ ||
+      image_center.y >= 0 || image_center.y <= image_height_minus_1_;
+
+  bool in_circle = cv::norm(point - image_center) <=
+                   color_camera_ptr()->intrinsics().height * 0.6;
+
+  return in_frame_rect && in_circle;
+}
+
 bool RegionModality::IsLineValid(const DataLine &data_line,
                                  bool use_region_checking,
                                  bool measure_occlusions,
@@ -1257,14 +1370,13 @@ bool RegionModality::IsLineValid(const DataLine &data_line,
   if (data_line.continuous_distance < min_continuous_distance_) return false;
 
   // Check if point is in front of image
-  if (data_line.center_f_camera(2) <= 0.0f) return false;
+  //if (data_line.center_f_camera(2) <= 0.0f) return false;
 
   // Check if image coordinate is on image
   int i_center_u = int(data_line.center_u + 0.5f);
   int i_center_v = int(data_line.center_v + 0.5f);
-  if (i_center_u < 0 || i_center_u > image_width_minus_1_ || i_center_v < 0 ||
-      i_center_v > image_height_minus_1_)
-    return false;
+
+  if (!IsPointInImage({i_center_u, i_center_v})) return false;
 
   // Check dynamic region size
   if (use_region_checking) {

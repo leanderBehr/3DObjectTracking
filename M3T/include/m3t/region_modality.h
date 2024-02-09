@@ -347,6 +347,7 @@ class RegionModality : public Modality {
   // Helper methods for CalculateCorrespondences
   void CalculateBasicLineData(const RegionModel::DataPoint &data_point,
                               DataLine *data_line) const;
+  [[nodiscard]] bool IsPointInImage(cv::Point2i point) const;
   bool IsLineValid(const DataLine &data_line, bool use_region_checking,
                    bool measure_occlusions, bool model_occlusions) const;
   bool IsDynamicLineRegionSufficient(float center_u, float center_v,
@@ -406,6 +407,7 @@ class RegionModality : public Modality {
   std::shared_ptr<FocusedDepthRenderer> depth_renderer_ptr_ = nullptr;
   std::shared_ptr<ColorHistograms> color_histograms_ptr_ = nullptr;
   std::shared_ptr<FocusedSilhouetteRenderer> silhouette_renderer_ptr_ = nullptr;
+  std::shared_ptr<FullSilhouetteRenderer> full_silhouette_renderer_ptr_ = nullptr;
 
   // Parameters for general distribution
   int n_lines_max_ = 200;

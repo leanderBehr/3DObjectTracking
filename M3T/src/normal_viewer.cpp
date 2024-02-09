@@ -51,7 +51,10 @@ NormalColorViewer::NormalColorViewer(
     : ColorViewer{name, color_camera_ptr},
       renderer_geometry_ptr_{renderer_geometry_ptr},
       opacity_{opacity},
-      renderer_{"renderer", renderer_geometry_ptr, color_camera_ptr} {}
+      renderer_{"renderer", renderer_geometry_ptr, color_camera_ptr} {
+        renderer_.set_z_min(0.001);
+        renderer_.set_z_max(0.5);
+    }
 
 NormalColorViewer::NormalColorViewer(
     const std::string &name, const std::filesystem::path &metafile_path,
@@ -59,7 +62,10 @@ NormalColorViewer::NormalColorViewer(
     const std::shared_ptr<RendererGeometry> &renderer_geometry_ptr)
     : ColorViewer{name, metafile_path, color_camera_ptr},
       renderer_geometry_ptr_{renderer_geometry_ptr},
-      renderer_{"renderer", renderer_geometry_ptr, color_camera_ptr} {}
+      renderer_{"renderer", renderer_geometry_ptr, color_camera_ptr} {
+        renderer_.set_z_min(0.001);
+        renderer_.set_z_max(0.5);
+    }
 
 bool NormalColorViewer::SetUp() {
   set_up_ = false;

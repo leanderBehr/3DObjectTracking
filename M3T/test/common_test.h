@@ -10,7 +10,7 @@
 #include <m3t/color_histograms.h>
 #include <m3t/common.h>
 #include <m3t/depth_model.h>
-#include <m3t/loader_camera.h>
+#include "m3t/cameras/loader_camera.h"
 #include <m3t/region_model.h>
 #include <m3t/silhouette_renderer.h>
 #include <m3t/static_detector.h>

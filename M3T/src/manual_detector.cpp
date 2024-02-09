@@ -68,7 +68,7 @@ bool PointDetector::DetectPoints() {
       unmodified_viewer_image.copyTo(viewer_image_);
     } else if (key == 'q' || key == 13) {
       cv::destroyWindow(window_name_);
-      return detected_points_.size() >= 4;
+      return detected_points_.size() >= 3;
     }
   }
 }
@@ -162,14 +162,23 @@ bool ManualDetector::DetectPoses(const std::set<std::string>& names,
                                  detector_image_path_};
     if (!point_detector.DetectPoints()) return false;
     cv::Mat rotation, translation;
+
+    //for (auto& point : reference_points_) {
+    //  point *= 100.0;
+    //}
+
     cv::solvePnP(reference_points_, point_detector.detected_points(),
                  GetCameraMatrixFromIntrinsics(), {}, rotation, translation,
-                 false, cv::SOLVEPNP_EPNP);
+                 false, cv::SOLVEPNP_SQPNP);
+
+    //for (auto& point : reference_points_) {
+    //  point /= 100.0;
+    //}
 
     // Transform translation to Eigen
     m3t::Transform3fA link2world_pose;
     Eigen::Vector3f eigen_translation;
-    cv::cv2eigen(translation, eigen_translation);
+    cv::cv2eigen(translation / 1.0, eigen_translation); 
     link2world_pose.translation() = eigen_translation;
 
     // Transform rotation to Eigen
@@ -187,6 +196,10 @@ bool ManualDetector::DetectPoses(const std::set<std::string>& names,
                 << link2world_pose.matrix() << std::endl;
       return true;
     }
+
+    std::cout << "detected link2world_pose = " << std::endl
+                                            << link2world_pose.matrix()
+                                            << std::endl;
 
     // Update pose
     UpdatePoses(link2world_pose, optimizer_ptr_);

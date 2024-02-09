@@ -1,5 +1,6 @@
 /*
 /*/
+*.bin
 *.asv
 doc/html
 !/include/

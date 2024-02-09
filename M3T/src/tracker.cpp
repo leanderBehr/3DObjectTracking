@@ -183,6 +183,17 @@ void Tracker::ClearSubscribers() {
   subscriber_ptrs_.clear();
 }
 
+bool Tracker::AddKeyCallback(const std::string &name,
+                             std::function<void(char)> callback) {
+  return key_callbacks_.insert(std::pair(name, std::move(callback))).second;
+}
+
+bool Tracker::DeleteKeyCallback(const std::string &name) {
+  return key_callbacks_.erase(name) == 1;
+}
+
+void Tracker::ClearKeyCallbacks() { key_callbacks_.clear(); }
+
 void Tracker::set_name(const std::string &name) { name_ = name; }
 
 void Tracker::set_metafile_path(const std::filesystem::path &metafile_path) {
@@ -248,13 +259,15 @@ bool Tracker::RunTrackerProcess(bool execute_detection, bool start_tracking,
     if (!UpdateCameras(iteration)) return false;
     if (!UpdateSubscribers(iteration)) return false;
     if (!CalculateConsistentPoses()) return false;
-    tracking_mutex_.lock();
-    if (!ExecuteDetectingStep(iteration)) return false;
-    if (!ExecuteStartingStep(iteration)) return false;
-    if (!ExecuteTrackingStep(iteration)) return false;
-    tracking_mutex_.unlock();
+    {
+      std::lock_guard lock{tracking_mutex_};
+      if (!ExecuteDetectingStep(iteration)) return false;
+      if (!ExecuteStartingStep(iteration)) return false;
+      if (!ExecuteTrackingStep(iteration)) return false;
+    }
     if (!UpdatePublishers(iteration)) return false;
     if (!UpdateViewers(iteration)) return false;
+    ProcessKeyPress();
     if (quit_tracker_process_) return true;
     if (!synchronize_cameras_) WaitUntilCycleEnds(begin);
   }
@@ -375,18 +388,7 @@ bool Tracker::UpdateViewers(int iteration) {
     for (auto &viewer_ptr : viewer_ptrs_) {
       viewer_ptr->UpdateViewer(iteration);
     }
-    char key = cv::waitKey(viewer_time_);
-    if (key == 'd') {
-      ExecuteDetection(false);
-    } else if (key == 'x') {
-      ExecuteDetection(true);
-    } else if (key == 't') {
-      StartTracking();
-    } else if (key == 's') {
-      StopTracking();
-    } else if (key == 'q') {
-      quit_tracker_process_ = true;
-    }
+    WaitForKey(viewer_time_);
   }
   return true;
 }
@@ -463,7 +465,7 @@ bool Tracker::VisualizeCorrespondences(int save_idx) {
     if (modality_ptr->imshow_correspondence()) imshow_correspondences = true;
   }
   if (imshow_correspondences) {
-    if (cv::waitKey(visualization_time_) == 'q') return false;
+    if (WaitForKey(visualization_time_) == 'q') return false;
   }
   return true;
 }
@@ -495,7 +497,7 @@ bool Tracker::VisualizeOptimization(int save_idx) {
     if (modality_ptr->imshow_optimization()) imshow_pose_update = true;
   }
   if (imshow_pose_update) {
-    if (cv::waitKey(visualization_time_) == 'q') return false;
+    if (WaitForKey(visualization_time_) == 'q') return false;
   }
   return true;
 }
@@ -523,7 +525,7 @@ bool Tracker::VisualizeResults(int save_idx) {
     if (modality_ptr->imshow_result()) imshow_result = true;
   }
   if (imshow_result) {
-    if (cv::waitKey(visualization_time_) == 'q') return false;
+    if (WaitForKey(visualization_time_) == 'q') return false;
   }
   return true;
 }
@@ -568,8 +570,8 @@ const std::vector<std::shared_ptr<Constraint>> &Tracker::constraint_ptrs()
   return constraint_ptrs_;
 }
 
-const std::vector<std::shared_ptr<SoftConstraint>>
-    &Tracker::soft_constraint_ptrs() const {
+const std::vector<std::shared_ptr<SoftConstraint>> &
+Tracker::soft_constraint_ptrs() const {
   return soft_constraint_ptrs_;
 }
 
@@ -585,8 +587,8 @@ const std::vector<std::shared_ptr<Camera>> &Tracker::camera_ptrs() const {
   return camera_ptrs_;
 }
 
-const std::vector<std::shared_ptr<RendererGeometry>>
-    &Tracker::renderer_geometry_ptrs() const {
+const std::vector<std::shared_ptr<RendererGeometry>> &
+Tracker::renderer_geometry_ptrs() const {
   return renderer_geometry_ptrs_;
 }
 
@@ -594,13 +596,13 @@ const std::vector<std::shared_ptr<Body>> &Tracker::body_ptrs() const {
   return body_ptrs_;
 }
 
-const std::vector<std::shared_ptr<Renderer>>
-    &Tracker::start_modality_renderer_ptrs() const {
+const std::vector<std::shared_ptr<Renderer>> &
+Tracker::start_modality_renderer_ptrs() const {
   return start_modality_renderer_ptrs_;
 }
 
-const std::vector<std::shared_ptr<Renderer>>
-    &Tracker::correspondence_renderer_ptrs() const {
+const std::vector<std::shared_ptr<Renderer>> &
+Tracker::correspondence_renderer_ptrs() const {
   return correspondence_renderer_ptrs_;
 }
 
@@ -609,8 +611,8 @@ const std::vector<std::shared_ptr<Renderer>> &Tracker::results_renderer_ptrs()
   return results_renderer_ptrs_;
 }
 
-const std::vector<std::shared_ptr<ColorHistograms>>
-    &Tracker::color_histograms_ptrs() const {
+const std::vector<std::shared_ptr<ColorHistograms>> &
+Tracker::color_histograms_ptrs() const {
   return color_histograms_ptrs_;
 }
 
@@ -919,4 +921,32 @@ bool Tracker::AreAllObjectsSetUp() {
          AreObjectPtrsSetUp(&subscriber_ptrs_);
 }
 
+char Tracker::WaitForKey(int delay) {
+  auto result = cv::waitKey(delay);
+  if (result != -1) pressed_key_ = result;
+  return result;
+}
+
+void Tracker::ProcessKeyPress() {
+  if (!pressed_key_) return;
+
+  auto key = pressed_key_.value();
+  pressed_key_.reset();
+
+  if (key == 'd') {
+    ExecuteDetection(false);
+  } else if (key == 'x') {
+    ExecuteDetection(true);
+  } else if (key == 't') {
+    StartTracking();
+  } else if (key == 's') {
+    StopTracking();
+  } else if (key == 'q') {
+    quit_tracker_process_ = true;
+  }
+
+  for (auto &[_, callback] : key_callbacks_) {
+    callback(key);
+  }
+}
 }  // namespace m3t

@@ -1,0 +1,12 @@
+%YAML:1.2
+name: left_camera
+video_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Coated_Hook_1\Video1.avi'
+timestamp_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Coated_Hook_1\Windows_timestamps_Video1.txt'
+intrinsics:
+  f_u: 604.95
+  f_v: 607.119
+  pp_x: 977.208
+  pp_y: 532.215
+  width: 1920
+  height: 1080
+distortion_coefficients: [0.0854419,-0.220617,-0.00523132,-0.00915257,0.101955]

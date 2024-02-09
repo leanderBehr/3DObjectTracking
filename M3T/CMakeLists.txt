@@ -20,8 +20,8 @@ if (WIN32)
     set(GLEW_STATIC true)
     set(OpenCV_STATIC true)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -MTd")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -MT")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -MDd")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -MD")
 endif ()
 
 # Used libraries
@@ -32,7 +32,7 @@ if (UNIX)
 endif ()
 find_package(OpenGL REQUIRED)
 find_package(glfw3 3.1.2 REQUIRED)
-find_package(OpenCV 4.3.0 REQUIRED COMPONENTS core imgproc highgui imgcodecs calib3d features2d xfeatures2d OPTIONAL_COMPONENTS cudafeatures2d)
+find_package(OpenCV 4.3.0 REQUIRED COMPONENTS core imgproc highgui imgcodecs calib3d features2d xfeatures2d OPTIONAL_COMPONENTS cudafeatures2d photo)
 
 if (USE_AZURE_KINECT)
     find_package(k4a 1.3.0 REQUIRED)
@@ -66,7 +66,7 @@ endif ()
 # =============================================================================
 
 # Default settings
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag(-march HAS_MARCH)
@@ -94,7 +94,7 @@ endif ()
 if (HAS_OD)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Od")
 endif ()
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -W4")
 
 # Release settings
 check_cxx_compiler_flag(-Ob3 HAS_OB3)

@@ -2,7 +2,7 @@
 // Copyright (c) 2023 Manuel Stoiber, German Aerospace Center (DLR)
 
 #include <gtest/gtest.h>
-#include <m3t/loader_camera.h>
+#include "m3t/cameras/loader_camera.h"
 
 #include "common_test.h"
 
