@@ -73,7 +73,9 @@ set(HEADERS
         ../include/m3t/generator.h
         ../include/m3t/cameras/opencv_camera.h
         ../include/m3t/cameras/video_file_camera.h
-        ../include/m3t/clock.h)
+        ../include/m3t/clock.h
+        ../include/m3t/pose_logger.h
+)
 
 if (USE_AZURE_KINECT)
     list(APPEND SOURCES cameras/azure_kinect_camera.cpp)

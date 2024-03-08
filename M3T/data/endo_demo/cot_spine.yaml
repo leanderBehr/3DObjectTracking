@@ -1,7 +1,17 @@
 %YAML:1.2
 name: left_camera
-video_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Coated_Hook_2\Video1_denoised.avi'
-timestamp_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Coated_Hook_2\Windows_timestamps_Video1.txt'
+# video_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Hook_Coated_Point_Pattern\Video1.avi'
+# fixed_framerate: true  
+
+# Examples
+# video_path: 'c:\users\leander.behr\onedrive - brainlab ag\idp\endoscope_recordings\Examples_Coated\NoTrocar_NoBone_Combined\Video1.avi'
+# timestamp_path: 'c:\users\leander.behr\onedrive - brainlab ag\idp\endoscope_recordings\Examples_Coated\NoTrocar_NoBone_Combined\Windows_timestamps_Video1.txt'
+# fixed_framerate: true    
+  
+# Evaluations
+video_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Evaluation_Red\Hook\Video1.avi'
+timestamp_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Evaluation_Red\Hook\Windows_timestamps_Video1.txt'
+  
 intrinsics:
   f_u: 813.405922
   f_v: 814.7103415

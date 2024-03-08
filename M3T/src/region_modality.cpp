@@ -409,6 +409,7 @@ bool RegionModality::CalculateCorrespondences(int iteration,
   PrecalculatePoseVariables();
   PrecalculateIterationDependentVariables(corr_iteration);
   full_silhouette_renderer_ptr_->StartRendering();
+  full_silhouette_renderer_ptr_->FetchDepthImage();
   full_silhouette_renderer_ptr_->FetchSilhouetteImage();
 
   // Check if body is visible and fetch images from renderers
@@ -442,23 +443,18 @@ bool RegionModality::CalculateCorrespondences(int iteration,
 
   auto &data_model_points{view->data_points};
 
-  //cv::Mat mat1 = cv::Mat::zeros(color_camera_ptr()->intrinsics().height,
-  //                              color_camera_ptr()->intrinsics().width, CV_32F);
-  //cv::Mat mat2;
-  //color_camera_ptr()->image().copyTo(mat2);
-
-  //cv::Mat mat3;
-  //full_silhouette_renderer_ptr_->silhouette_image().copyTo(mat3);
-
-  //for (auto &mat : {mat3}) {
+  //{
+  //  cv::Mat silhouette_image;
+  //  full_silhouette_renderer_ptr_->silhouette_image().copyTo(silhouette_image);
+  //
   //  for (auto &p : data_model_points) {
   //    DataLine line;
   //    CalculateBasicLineData(p, &line);
-  //    cv::circle(mat, cv::Point(line.center_u, line.center_v), 2, 128,
+  //    cv::circle(silhouette_image, cv::Point(line.center_u, line.center_v), 2, 128,
   //               cv::FILLED);
   //  }
 
-  //  cv::imshow("", mat);
+  //  cv::imshow("selected silhouette points", silhouette_image);
   //}
 
   // Scale number of lines with contour_length ratio
@@ -520,9 +516,9 @@ bool RegionModality::CalculateCorrespondences(int iteration,
       data_lines_.push_back(std::move(data_line));
     }
 
-    //std::cout << "total " << n_lines << "; considered " << considered_lines
-    //          << "; invalid " << invalid_lines << "; probability calc failed "
-    //          << probability_failure_lines << ";\n";
+    // std::cout << "total " << n_lines << "; considered " << considered_lines
+    //           << "; invalid " << invalid_lines << "; probability calc failed "
+    //           << probability_failure_lines << ";\n";
 
     assert(n_lines - invalid_lines - probability_failure_lines ==
            considered_lines);
@@ -600,15 +596,13 @@ bool RegionModality::CalculateGradientAndHessian(int iteration,
     Eigen::RowVector3f ddelta_cs_dcenter{
         data_line.normal_component_to_scale * data_line.normal_u * fu_z,
         data_line.normal_component_to_scale * data_line.normal_v * fv_z,
-        data_line.normal_component_to_scale *
-            (-data_line.normal_u * xfu_z - data_line.normal_v * yfv_z) / z};
+        data_line.normal_component_to_scale * (-data_line.normal_u * xfu_z - data_line.normal_v * yfv_z) / z};
     Eigen::RowVector3f ddelta_cs_dtranslation{ddelta_cs_dcenter * body2camera_rotation_};
 
     ddelta_cs_dtranslation *= (z * 1000);
 
     Eigen::Matrix<float, 1, 6> ddelta_cs_dtheta;
-    ddelta_cs_dtheta << 
-        data_line.center_f_body.transpose().cross(ddelta_cs_dtranslation),
+    ddelta_cs_dtheta << data_line.center_f_body.transpose().cross(ddelta_cs_dtranslation),
         ddelta_cs_dtranslation;
 
     // Calculate weight
@@ -617,8 +611,7 @@ bool RegionModality::CalculateGradientAndHessian(int iteration,
                     data_line.normal_component_to_scale * variance_);
 
     // Calculate gradient and hessian
-    gradient_ +=
-        (weight * dloglikelihood_ddelta_cs) * ddelta_cs_dtheta.transpose();
+    gradient_ += (weight * dloglikelihood_ddelta_cs) * ddelta_cs_dtheta.transpose();
     hessian_.triangularView<Eigen::Lower>() -=
         (weight / data_line.measured_variance) * ddelta_cs_dtheta.transpose() *
         ddelta_cs_dtheta;
@@ -1198,8 +1191,7 @@ void RegionModality::AddLinePixelColorsToTempHistograms(
     length_b = std::fmin(length_b, l_b - 2.0f * unconsidered_line_length_);
 
     // Define steps and projected considered line lengths
-    Eigen::Vector2f normal{
-        (body2camera_rotation_xy_ * data_point.normal_f_body).normalized()};
+    Eigen::Vector2f normal = (body2camera_rotation_xy_ * data_point.normal_f_body).normalized();
     float u_step, v_step;
     int projected_length_f, projected_length_b;
     float abs_normal_u = std::fabs(normal(0));
@@ -1329,9 +1321,12 @@ void RegionModality::DynamicRegionDistance(
 
 void RegionModality::CalculateBasicLineData(
     const RegionModel::DataPoint &data_point, DataLine *data_line) const {
-  Eigen::Vector3f center_f_camera{body2camera_pose_ * data_point.center_f_body};
-  Eigen::Vector2f normal_f_camera{
-      (body2camera_rotation_xy_ * data_point.normal_f_body).normalized()};
+  auto z = data_point.normal_f_body.z();
+
+  Eigen::Vector3f center_f_camera = body2camera_pose_ * data_point.center_f_body;
+  Eigen::Vector2f normal_f_camera = (body2camera_rotation_xy_ * data_point.normal_f_body).normalized();
+
+  Eigen::Vector3f x = body2camera_pose_.rotation() * data_point.normal_f_body;
 
   data_line->center_f_body = data_point.center_f_body;
   data_line->center_f_camera = center_f_camera;
@@ -1367,16 +1362,18 @@ bool RegionModality::IsLineValid(const DataLine &data_line,
                                  bool measure_occlusions,
                                  bool model_occlusions) const {
   // Check if continuous distance is long enough
-  if (data_line.continuous_distance < min_continuous_distance_) return false;
+  if (data_line.continuous_distance < min_continuous_distance_)
+    return false;
 
   // Check if point is in front of image
-  //if (data_line.center_f_camera(2) <= 0.0f) return false;
+  // if (data_line.center_f_camera(2) <= 0.0f) return false;
 
   // Check if image coordinate is on image
   int i_center_u = int(data_line.center_u + 0.5f);
   int i_center_v = int(data_line.center_v + 0.5f);
 
-  if (!IsPointInImage({i_center_u, i_center_v})) return false;
+  if (!IsPointInImage({i_center_u, i_center_v}))
+    return false;
 
   // Check dynamic region size
   if (use_region_checking) {
@@ -1868,8 +1865,52 @@ void RegionModality::DrawFocusedPoints(
 void RegionModality::DrawLines(const cv::Vec3b &color_line,
                                const cv::Vec3b &color_high_probability,
                                cv::Mat *image) const {
+  //auto points = std::vector{Eigen::Vector3f(0, 0.26037, 0), Eigen::Vector3f(0, 0.25937, 0), Eigen::Vector3f(0, 0.25837, 0)};
+
+  //auto to_image_point = [&](Eigen::Vector3f const &point) {
+  //  auto cam_point = body2camera_pose_ * point;
+  //  cv::Point2f image_point{cam_point.x() * fu_ / cam_point.z() + ppu_, cam_point.y() * fv_ / cam_point.z() + ppv_};
+  //  return image_point;
+  //};
+
+  //for (auto &point : points) {
+  //  cv::circle(*image, to_image_point(point), 5, cv::Scalar(0, 255, 0), cv::FILLED);
+  //}
+
+  //auto imp1 = to_image_point(points[0]);
+  //auto imp2 = to_image_point(points[1]);
+
+  //auto direction = cv::normalize(cv::Vec2f(imp1 - imp2));
+
+  //Eigen::Vector3f body_normal = Eigen::Vector3f(0, 0, 1);
+  //Eigen::Vector3f normal = (body2camera_rotation_ * body_normal);
+  //auto image_normal = cv::normalize(cv::Vec2f(normal.x(), normal.y()));
+
+  //auto slim_to_image_point = [&](Eigen::Vector3f const &point) {
+  //  Eigen::Vector3f cam_point = body2camera_pose_ * point;
+  //  cv::Point2f image_point = cv::Point2f{cam_point.x(), cam_point.y()} / cam_point.z();
+  //  return image_point;
+  //};
+
+  //// (T * s + T * n) / (T * s).z + (T * n).z - (T * s) / (T * s).z
+
+  //auto cam_orig_in_body = body2camera_pose_.inverse() * Eigen::Vector3f(0, 0, 0);
+  //cv::Vec2f image_normal_2 = slim_to_image_point(Eigen::Vector3f(0, 0.26, 0) + body_normal) - slim_to_image_point(Eigen::Vector3f(0, 0.26, 0));
+  //image_normal_2 = cv::normalize(image_normal_2);
+
+  //for (auto &point : {points[0]}) {
+  //  cv::Point2f image_point1 = to_image_point(point);
+  //  cv::Point2f image_point2 = image_point1 + cv::Point2f(image_normal_2 * 100);
+
+  //  cv::arrowedLine(*image, image_point1, image_point2, cv::Scalar(0, 255, 0), 2);
+  //}
+
+  //cv::arrowedLine(*image, to_image_point(points[2]), to_image_point(points[1]), cv::Scalar(0, 0, 255), 2);
+
+  //return;
   float scale_minus_1_half_ = (fscale_ - 1.0f) / 2.0f;
   float x, u, v, u_step, v_step;
+  std::size_t line_index = 0;
   for (const auto &data_line : data_lines_) {
     if (std::fabs(data_line.normal_u) > std::fabs(data_line.normal_v)) {
       u_step = sgnf(data_line.normal_u);
@@ -1879,19 +1920,28 @@ void RegionModality::DrawLines(const cv::Vec3b &color_line,
       v_step = sgnf(data_line.normal_v);
     }
 
+    bool disabled = /*line_index >= data_lines_.size() - 10 ||*/ std ::abs(data_line.center_f_body.maxCoeff()) >= 0.5;
+    auto chosen_color_line = disabled ? cv::Vec3b(200, 50, 50) : color_line;
+    auto chosen_color_high_prob = disabled ? cv::Vec3b(200, 150, 150) : color_high_probability;
+
+    //if (!disabled) {
+    //  line_index += 1;
+    //  continue;
+    //}
+
     x = -fscale_ * distribution_length_minus_1_half_ - scale_minus_1_half_;
     u = data_line.center_u + u_step * x + 0.5f;
     v = data_line.center_v + v_step * x + 0.5f;
     for (int i = 0; i < distribution_length_; ++i) {
       for (int j = 0; j < scale_; ++j) {
         float color_ratio = std::min(3 * data_line.distribution[i], 1.0f);
-        image->at<cv::Vec3b>(int(v), int(u)) =
-            color_ratio * color_high_probability +
-            (1.0f - color_ratio) * color_line;
+        image->at<cv::Vec3b>(int(v), int(u)) = color_ratio * chosen_color_high_prob + (1.0f - color_ratio) * chosen_color_line;
         u += u_step;
         v += v_step;
       }
     }
+
+    line_index += 1;
   }
 }
 

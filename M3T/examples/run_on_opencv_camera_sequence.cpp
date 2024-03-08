@@ -18,6 +18,9 @@
 #include "m3t/cameras/opencv_camera.h"
 #include "m3t/cameras/video_file_camera.h"
 #include "m3t/lambda_subscriber.h"
+#include "m3t/pose_logger.h"
+
+#include "Settings.h"
 
 #include <Eigen/Geometry>
 
@@ -41,11 +44,9 @@ Cameras makeCameras(std::filesystem::path const &base_directory,
                     std::vector<std::string> camera_names) {
   auto timestamp_vectors_view =
       camera_names | std::views::transform([&](auto camera_name) {
-        return m3t::getTimestampsFromConfig(
-            base_directory / std::format("{}.yaml", camera_name));
+        return m3t::getTimestampsFromConfig(base_directory / std::format("{}.yaml", camera_name));
       });
-  std::vector<std::vector<m3t::steady_time_point>> timestamp_vectors =
-      range_to_vector(timestamp_vectors_view);
+  std::vector<std::vector<m3t::steady_time_point>> timestamp_vectors = range_to_vector(timestamp_vectors_view);
   auto all_timestamps = std::views::join(timestamp_vectors);
   auto min_max = std::ranges::minmax_element(all_timestamps);
 
@@ -86,42 +87,13 @@ Cameras makeWebcam() {
   return Cameras{.clock = std::move(clock), .cameras = std::move(camera_vec)};
 }
 
-struct ModalitySettings {
-  std::optional<int> n_histogram_bins{};
-  std::optional<std::vector<int>> scales{};
-  std::optional<std::vector<float>> standard_deviations{};
-
-  std::optional<float> max_considered_line_length{};
-  std::optional<float> unconsidered_line_length{};
-
-  std::optional<float> function_slope{};
-  std::optional<float> function_amplitude{};
-
-  std::optional<int> n_global_iterations{};
-};
-
-struct OptimizerSettings {
-  std::optional<float> tikhonov_parameter_translation{};
-  std::optional<float> tikhonov_parameter_rotation{};
-};
-
-struct TrackerSettings {
-  std::optional<int> n_corr_iterations;
-  std::optional<int> n_update_iterations;
-};
-
-struct Settings {
-  ModalitySettings modality_settings;
-  OptimizerSettings optimizer_settings;
-  TrackerSettings tracker_settings;
-};
-
-auto settings = Settings{
+auto good_eval_pointer_settings = Settings{
     .modality_settings = {
         .n_histogram_bins = 64,
 
-        .scales = std::vector{12, 12, 8, 8, 4},
-        .standard_deviations = std::vector<float>{15, 15, 7, 7, 4},
+        // 20s for big frame to frame jumps and recovery from losing tracking close to the image border
+        .scales = std::vector{20, 20, 12, 12, 8, 8, 4, 4},
+        .standard_deviations = std::vector<float>{20, 20, 15, 15, 7, 7, 4, 4},
 
         .max_considered_line_length = 200,
         .unconsidered_line_length = 5,
@@ -129,20 +101,87 @@ auto settings = Settings{
         .function_slope = 2,
         .function_amplitude = 0.3,
 
-        .n_global_iterations = 7,
+        .n_global_iterations = 6,
+
+        .n_lines_max = 400,
+        .min_continuous_distance = 1,
     },
     .optimizer_settings = {
-        .tikhonov_parameter_translation = 500'000,
-        .tikhonov_parameter_rotation = 1'000,
+        .tikhonov_parameter_translation = 5 * 1e7,
+        .tikhonov_parameter_rotation = 1 * 1e5,
     },
     .tracker_settings = {
-        .n_corr_iterations = 5,
-        .n_update_iterations = 10,
+        .n_update_iterations = 6,
     },
 };
 
+auto examples_settings = Settings{
+    .modality_settings = {
+        .n_histogram_bins = 64,
+
+        .scales = std::vector{16, 16, 8, 8, 4, 4, 2, 2},
+        .standard_deviations = std::vector<float>{16, 16, 8, 8, 4, 4, 2, 2},
+
+        .max_considered_line_length = 40,
+        .unconsidered_line_length = 0.5,
+
+        .function_slope = 0.5,      // (0, infity), 0 => small local uncertainty, infity => large local uncertainty
+        .function_amplitude = 0.4,  // (0, 0.5], 0 => large global noise, 0.5 => small global noise
+
+        .n_global_iterations = 3,
+
+        .n_lines_max = 400,
+        .min_continuous_distance = 1,
+    },
+    .optimizer_settings = {
+        .tikhonov_parameter_translation = 5 * 1e7,
+        .tikhonov_parameter_rotation = 1 * 1e5,
+    },
+    .tracker_settings = {
+        .n_update_iterations = 6,
+    },
+};
+
+auto eval_settings = Settings{
+    .modality_settings = {
+        .n_histogram_bins = 64,
+
+        .scales = std::vector{8, 8, 4, 4, 2, 2},
+        .standard_deviations = std::vector<float>{8, 8, 4, 4, 2, 2},
+
+        .max_considered_line_length = 100,
+        .unconsidered_line_length = 0,
+
+        .function_slope = 0.4, // (0, infity), 0 => small local uncertainty, infity => large local uncertainty
+        .function_amplitude = 0.5, // (0, 0.5], 0 => large global noise, 0.5 => small global noise
+
+        .n_global_iterations = 3,
+
+        .n_lines_max = 400,
+        .min_continuous_distance = 1,
+    },
+    .optimizer_settings = {
+        .tikhonov_parameter_translation = 5 * 1e6,
+        .tikhonov_parameter_rotation = 1 * 1e5,
+    },
+    .tracker_settings = {
+        .n_update_iterations = 6,
+    },
+};
+
+auto settings = eval_settings;
+
 void configure_region_modality(m3t::RegionModality &modality) {
   auto s = settings.modality_settings;
+  if (settings.modality_settings.scales || settings.modality_settings.standard_deviations) {
+    bool valid = settings.modality_settings.scales && settings.modality_settings.standard_deviations &&
+                 settings.modality_settings.scales->size() ==
+                     settings.modality_settings.standard_deviations->size();
+    if (!valid) {
+      std::cerr << "Different number of scales and standard deviations\n";
+      throw std::logic_error("Different number of scales and standard deviations");
+    }
+  }
 
   if (s.n_histogram_bins) modality.set_n_histogram_bins(*s.n_histogram_bins);
   if (s.scales) modality.set_scales(*s.scales);
@@ -152,8 +191,10 @@ void configure_region_modality(m3t::RegionModality &modality) {
   if (s.function_slope) modality.set_function_slope(*s.function_slope);
   if (s.function_amplitude) modality.set_function_amplitude(*s.function_amplitude);
   if (s.n_global_iterations) modality.set_n_global_iterations(*s.n_global_iterations);
-  //modality.set_learning_rate_f(0.4);
-  //modality.set_learning_rate_b(0.4);
+  if (s.n_lines_max) modality.set_n_lines_max(*s.n_lines_max);
+  if (s.min_continuous_distance) modality.set_min_continuous_distance(*s.min_continuous_distance);
+  // modality.set_learning_rate_f(0.4);
+  // modality.set_learning_rate_b(0.4);
 }
 
 void configure_optimizer(m3t::Optimizer &optimizer) {
@@ -166,11 +207,27 @@ void configure_optimizer(m3t::Optimizer &optimizer) {
 void configure_tracker(m3t::Tracker &tracker) {
   auto s = settings.tracker_settings;
 
-  if (s.n_corr_iterations) tracker.set_n_corr_iterations(*s.n_corr_iterations);
+  bool has_corr_it = settings.modality_settings.scales || settings.modality_settings.standard_deviations;
+
+  if (has_corr_it) tracker.set_n_corr_iterations(settings.modality_settings.scales->size());
   if (s.n_update_iterations) tracker.set_n_update_iterations(*s.n_update_iterations);
 }
 
-constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(1705487399339000000)) - std::chrono::milliseconds(0);
+ constexpr std::optional<m3t::steady_time_point> reset_time = {};
+
+// 1709216536070000000
+// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(1709216574204000000) - std::chrono::milliseconds(1000));
+// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(1708706085354000000)) - std::chrono::milliseconds(100);
+
+// coated, cot, no trocar, no bone, combined => z-rotation
+// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(40200000000)) - std::chrono::milliseconds(500);
+// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(40200000000)) - std::chrono::milliseconds(500);
+
+// ???
+// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(1705487399339000000)) - std::chrono::milliseconds(500);
+
+// coated_hook_2 before jump
+// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(1705487406679000000)) - std::chrono::milliseconds(300);
 
 int main(int argc, char *argv[]) {
   if (argc < 3) {
@@ -182,6 +239,10 @@ int main(int argc, char *argv[]) {
     body_names.emplace_back(argv[i]);
   }
 
+  auto body_of_interest = body_names.front();
+
+  static constexpr bool kLogPoses = false;
+  static constexpr bool kUseConstraints = false;
   constexpr bool kUseDepthViewer = false;
   constexpr bool kUseRegionModality = true;
   constexpr bool kUseTextureModality = false;
@@ -201,6 +262,7 @@ int main(int argc, char *argv[]) {
 
   // Set up cameras
   auto cameras_ptr = std::make_shared<Cameras>(makeCameras(base_directory, {"cot_spine"}));
+  // auto cameras_ptr = std::make_shared<Cameras>(makeWebcam());
   auto camera_ptrs_view = cameras_ptr->cameras | std::views::transform([&](auto &camera_ptr) {
                             return std::shared_ptr<m3t::ColorCamera>(cameras_ptr, camera_ptr.get());
                           });
@@ -220,22 +282,23 @@ int main(int argc, char *argv[]) {
   }
 
   // Set up depth renderer
-  auto color_depth_renderer_ptr{
-      std::make_shared<m3t::FocusedBasicDepthRenderer>(
-          "color_depth_renderer", renderer_geometry_ptr, color_camera_ptr)};
+  auto color_depth_renderer_ptr = std::make_shared<m3t::FocusedBasicDepthRenderer>(
+      "color_depth_renderer",
+      renderer_geometry_ptr,
+      color_camera_ptr);
 
   // Set up silhouette renderer
-  auto color_silhouette_renderer_ptr{
-      std::make_shared<m3t::FocusedSilhouetteRenderer>(
-          "color_silhouette_renderer", renderer_geometry_ptr,
-          color_camera_ptr)};
+  auto color_silhouette_renderer_ptr = std::make_shared<m3t::FocusedSilhouetteRenderer>(
+      "color_silhouette_renderer",
+      renderer_geometry_ptr,
+      color_camera_ptr);
   color_silhouette_renderer_ptr->set_z_min(0.0001f);
   color_silhouette_renderer_ptr->set_z_max(0.5f);
 
   for (const auto body_name : body_names) {
     // Set up body
     std::filesystem::path metafile_path{base_directory / (body_name + ".yaml")};
-    auto body_ptr{std::make_shared<m3t::Body>(body_name, metafile_path)};
+    auto body_ptr = std::make_shared<m3t::Body>(body_name, metafile_path);
     renderer_geometry_ptr->AddBody(body_ptr);
     color_depth_renderer_ptr->AddReferencedBody(body_ptr);
     color_silhouette_renderer_ptr->AddReferencedBody(body_ptr);
@@ -246,7 +309,7 @@ int main(int argc, char *argv[]) {
         base_directory / (body_name + "_region_model.bin"),
         0.8,  // sphere radius
         4,    // divides
-        200   // points
+        400   // points
         )};
 
     // Set up modalities
@@ -255,9 +318,14 @@ int main(int argc, char *argv[]) {
         region_model_ptr)};
     configure_region_modality(*region_modality_ptr);
 
-    auto texture_modality_ptr{std::make_shared<m3t::TextureModality>(
-        body_name + "_texture_modality", body_ptr, color_camera_ptr,
-        color_silhouette_renderer_ptr)};
+    auto texture_modality_ptr = std::make_shared<m3t::TextureModality>(
+        body_name + "_texture_modality",
+        body_ptr,
+        color_camera_ptr,
+        color_silhouette_renderer_ptr);
+
+    texture_modality_ptr->set_descriptor_type(m3t::TextureModality::DescriptorType::ORB_CUDA);
+
     if constexpr (kVisualize) {
       region_modality_ptr->set_visualize_lines_correspondence(true);
     }
@@ -274,10 +342,12 @@ int main(int argc, char *argv[]) {
     if constexpr (kUseTextureModality)
       link_ptr->AddModality(texture_modality_ptr);
 
-    link_ptr->set_free_directions({
-        false, false, true,  // rotation
-        true, true, true, // translation
-    });
+    if constexpr (kUseConstraints) {
+      link_ptr->set_free_directions({
+          false, false, true,  // rotation
+          true, true, true,    // translation
+      });
+    }
 
     // Set up optimizer
     auto optimizer_ptr = std::make_shared<m3t::Optimizer>(body_name + "_optimizer", link_ptr);
@@ -324,13 +394,13 @@ int main(int argc, char *argv[]) {
     }
   });
 
-  //cameras_ptr->clock->stop_at(
-  //    m3t::steady_time_point(std::chrono::nanoseconds(1705487275472000000)) +
-  //    std::chrono::seconds(1));
+  // cameras_ptr->clock->stop_at(
+  //     m3t::steady_time_point(std::chrono::nanoseconds(1705487275472000000)) +
+  //     std::chrono::seconds(1));
 
   auto detector_ptr = std::dynamic_pointer_cast<m3t::StaticDetector>(
-      *std::ranges::find_if(tracker_ptr->detector_ptrs(), [](auto &d) {
-        return d->name() == "hook_detector";
+      *std::ranges::find_if(tracker_ptr->detector_ptrs(), [=](auto &d) {
+        return d->name() == body_of_interest + "_detector";
       }));
 
   assert(detector_ptr);
@@ -409,42 +479,60 @@ int main(int argc, char *argv[]) {
   });
 
   // Clock Update
-
-  // auto timestamps = m3t::getTimestampsFromConfig(base_directory / std::format("{}.yaml", "cot_spine"));
-  //{
-  //   auto *sub = new m3t::LambdaSubscriber(
-  //       "ClockUpdater", [&, clock = cameras_ptr->clock.get()](int i) {
-  //         if (!started) return;
-  //         auto index = std::distance(timestamps.begin(), std::ranges::lower_bound(timestamps, cameras_ptr->clock->current_time())) + 1;
-  //         if (index < timestamps.size()) {
-  //           clock->set_to(timestamps[index]);
-  //         }
-  //       });
-  //   tracker_ptr->AddSubscriber(std::shared_ptr<m3t::Subscriber>{sub});
-  // }
-
+  auto timestamps = m3t::getTimestampsFromConfig(base_directory / std::format("{}.yaml", "cot_spine"));
   {
-    using namespace std::literals;
     auto *sub = new m3t::LambdaSubscriber(
         "ClockUpdater", [&, clock = cameras_ptr->clock.get()](int i) {
           if (!started) return;
-          clock->set_to(clock->current_time() + 10ms);
+          auto index = std::distance(timestamps.begin(), std::ranges::lower_bound(timestamps, cameras_ptr->clock->current_time())) + 1;
+          if (index < timestamps.size()) {
+            clock->set_to(timestamps[index]);
+          }
         });
     tracker_ptr->AddSubscriber(std::shared_ptr<m3t::Subscriber>{sub});
+  }
+
+  //{
+  //  using namespace std::literals;
+  //  auto *sub = new m3t::LambdaSubscriber(
+  //      "ClockUpdater", [&, clock = cameras_ptr->clock.get()](int i) {
+  //        if (!started) return;
+  //        clock->set_to(clock->current_time() + 10ms);
+  //      });
+  //  tracker_ptr->AddSubscriber(std::shared_ptr<m3t::Subscriber>{sub});
+  //}
+
+  if constexpr (kLogPoses) {
+    auto body_ptr = *std::ranges::find_if(renderer_geometry_ptr->body_ptrs(), [=](auto &d) {
+      return d->name() == body_of_interest;
+    });
+
+    tracker_ptr->AddSubscriber(std::make_shared<m3t::PoseLogger>(
+        cameras_ptr->clock.get(),
+        body_ptr,
+        std::filesystem::path(R"(C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Evaluation\Hook\VideoTrackingPoses.txt)")));
   }
 
   // Start tracking
   if (!tracker_ptr->SetUp()) return -1;
 
   auto region_ptr = std::dynamic_pointer_cast<m3t::RegionModality>(
-      *std::ranges::find_if(tracker_ptr->modality_ptrs(), [](auto &d) {
-        return d->name() == "hook_region_modality";
+      *std::ranges::find_if(tracker_ptr->modality_ptrs(), [=](auto &d) {
+        return d->name() == body_of_interest + "_region_modality";
       }));
+
+  // auto texture_ptr = std::dynamic_pointer_cast<m3t::TextureModality>(
+  //     *std::ranges::find_if(tracker_ptr->modality_ptrs(), [=](auto &d) {
+  //       return d->name() == body_of_interest + "_texture_modality";
+  //     }));
 
   tracker_ptr->AddKeyCallback("ToggleVis", [&](char key) {
     if (key == 'v') {
-      region_ptr->set_visualize_lines_correspondence(
-          !region_ptr->visualize_lines_correspondence());
+      region_ptr->set_visualize_lines_correspondence(!region_ptr->visualize_lines_correspondence());
+      // region_ptr->set_visualize_gradient_optimization(!region_ptr->visualize_gradient_optimization());
+      // region_ptr->set_visualize_hessian_optimization(!region_ptr->visualize_hessian_optimization());
+      // region_ptr->set_visualize_points_optimization(!region_ptr->visualize_points_optimization());
+       region_ptr->set_visualize_pose_result(!region_ptr->visualize_pose_result());
     }
   });
 

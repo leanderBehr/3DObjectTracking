@@ -3,6 +3,8 @@
 
 #include <m3t/optimizer.h>
 
+#include <numbers>
+
 namespace m3t {
 
 Optimizer::Optimizer(const std::string &name,
@@ -141,6 +143,12 @@ bool Optimizer::CalculateConsistentPoses() {
   return UpdatePoses(Eigen::VectorXf::Zero(degrees_of_freedom_));
 }
 
+template<class T>
+using MatrixX = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+
+template<class T>
+using VectorX = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+
 bool Optimizer::CalculateOptimization(int iteration, int corr_iteration,
                                       int opt_iteration) {
   if (!set_up_) {
@@ -148,21 +156,39 @@ bool Optimizer::CalculateOptimization(int iteration, int corr_iteration,
     return false;
   }
 
+  using numT = double;
+
   // Assamble coefficient matrix and column vector
   int size{degrees_of_freedom_ + NumberOfConstraints()};
-  Eigen::VectorXf b{Eigen::VectorXf::Zero(size)};
-  Eigen::MatrixXf a{Eigen::MatrixXf::Zero(size, size)};
+  Eigen::VectorXf bb{Eigen::VectorXf::Zero(size)};
+  Eigen::MatrixXf aa{Eigen::MatrixXf::Zero(size, size)};
   if (!CalculateDataLinks()) return false;
   if (!CalculateDataConstraints()) return false;
-  AddProjectedGradientsAndHessians(&b, &a);
-  AddResidualsAndConstraintJacobians(&b, &a);
-  a.diagonal().topRows(degrees_of_freedom_) += tikhonov_vector_;
+  AddProjectedGradientsAndHessians(&bb, &aa);
+  AddResidualsAndConstraintJacobians(&bb, &aa);
+
+  MatrixX<numT> a = aa.cast<numT>();
+  VectorX<numT> b = bb.cast<numT>();
+
+  a.diagonal().topRows(degrees_of_freedom_) += tikhonov_vector_.cast<numT>();
 
   //// Optimize and update pose
-  Eigen::LDLT<Eigen::MatrixXf, Eigen::Lower> ldlt{a};
-  Eigen::VectorXf theta{ldlt.solve(b)};
+  Eigen::LDLT<MatrixX<numT>, Eigen::Lower> ldlt{a};
+  VectorX<numT> theta{ldlt.solve(b)};
 
-  if (theta.array().isNaN().isZero()) return UpdatePoses(theta);
+  auto max_translation = theta.tail<3>().cwiseAbs().maxCoeff();
+  auto max_rotation = theta.head<3>().cwiseAbs().maxCoeff();
+  auto max_translation_mm = max_translation * 1000;
+  auto max_rotation_deg = max_rotation * 180 / std::numbers::pi;
+
+  //if (max_translation_mm > 2 || max_rotation_deg > 2) {
+  //  std::cout << a << "\n\n";
+  //  std::cout << b << "\n\n";
+  //  std::cout << theta << "\n\n";
+  //  std::cout << max_translation_mm << "mm  " << max_rotation_deg << "deg\n";
+  //}
+
+  if (theta.array().isNaN().isZero()) return UpdatePoses(theta.cast<float>());
   return true;
 }
 

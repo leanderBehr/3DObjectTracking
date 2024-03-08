@@ -895,7 +895,8 @@ bool TextureModality::CalculateScaleAndRegionOfInterest(
   float x = translation(0);
   float y = translation(1);
   float z = translation(2);
-  if (z < r * 1.5f) return false;
+  if (z < r * 1.5f) 
+      z = r * 1.5f;
   float abs_x = std::abs(x);
   float abs_y = std::abs(y);
   float x2 = x * x;
@@ -942,7 +943,7 @@ void TextureModality::ComputeKeyframeData() {
   }
 
   // Fetch depth and silhouette images
-  if (!silhouette_renderer_ptr_->IsBodyVisible(body_ptr_->name())) return;
+  //if (!silhouette_renderer_ptr_->IsBodyVisible(body_ptr_->name())) return;
   silhouette_renderer_ptr_->FetchDepthImage();
   silhouette_renderer_ptr_->FetchSilhouetteImage();
   bool body_visible_depth;

@@ -306,8 +306,7 @@ bool FocusedRenderer::IsBodyVisible(const std::string &body_name) const {
                    body_name) != end(visible_body_names_);
 }
 
-const std::vector<std::shared_ptr<Body>>
-    &FocusedRenderer::referenced_body_ptrs() const {
+const std::vector<std::shared_ptr<Body>> &FocusedRenderer::referenced_body_ptrs() const {
   return referenced_body_ptrs_;
 }
 
@@ -443,9 +442,31 @@ ushort FullDepthRenderer::DepthImageValue(
   return depth_image_.at<ushort>(image_coordinate);
 }
 
-Eigen::Vector3f FullDepthRenderer::PointVector(
-    const cv::Point2i &image_coordinate) const {
+Eigen::Vector3f FullDepthRenderer::PointVector(const cv::Point2i &image_coordinate) const {
   float depth_image_value = float(depth_image_.at<ushort>(image_coordinate));
+  float depth = projection_term_a_ / (projection_term_b_ - depth_image_value);
+  return Eigen::Vector3f{
+      depth * (image_coordinate.x - intrinsics_.ppu) / intrinsics_.fu,
+      depth * (image_coordinate.y - intrinsics_.ppv) / intrinsics_.fv, depth};
+}
+
+Eigen::Vector3f FullDepthRenderer::PointVector(const cv::Point2i &image_coordinate, const cv::Point2f &normal) const {
+  float depth_image_value = float(depth_image_.at<ushort>(image_coordinate));
+
+  cv::Point2f float_coord = image_coordinate;
+  float dominant_component = std::max(std::abs(normal.x), std::abs(normal.y));
+  cv::Point2f scaled_normal = -1 * normal / dominant_component;
+
+  for (int i = 1; i < 10; ++i) {
+    if (depth_image_value < USHRT_MAX) break;
+    cv::Point2i rounded_coord = float_coord + scaled_normal * i;
+    depth_image_value = float(depth_image_.at<ushort>(rounded_coord));
+  }
+
+  if (depth_image_value == USHRT_MAX) {
+    std::cerr << "Could not find depth value for image coordinate\n";
+  }
+
   float depth = projection_term_a_ / (projection_term_b_ - depth_image_value);
   return Eigen::Vector3f{
       depth * (image_coordinate.x - intrinsics_.ppu) / intrinsics_.fu,

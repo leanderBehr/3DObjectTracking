@@ -498,10 +498,10 @@ bool RegionModel::GeneratePointData(
   if (!GenerateValidContours(silhouette_image, &contours, &pixel_contour_length))
     return false;
 
-  //cv::Mat silhouette_display{};
-  //cv::resize(silhouette_image, silhouette_display, cv::Size(), 0.5, 0.5);
-  //cv::imshow("silhouette", silhouette_display);
-  //cv::waitKey();
+  // cv::Mat silhouette_display{};
+  // cv::resize(silhouette_image, silhouette_display, cv::Size(), 0.5, 0.5);
+  // cv::imshow("silhouette", silhouette_display);
+  // cv::waitKey();
 
   if (pixel_contour_length == 0) {
     *contour_length = 0.0f;
@@ -513,15 +513,16 @@ bool RegionModel::GeneratePointData(
   float pixel_to_meter = sphere_radius_ / main_renderer.intrinsics().fu;
   float max_depth_difference = pixel_to_meter * kMaxSurfaceGradient;
   for (auto &contour : contours) {
-    //cv::Mat vis_img = silhouette_image;
+    // cv::Mat vis_img;
+    // silhouette_image.copyTo(vis_img);
 
-    //for (auto &p : contour) {
-    //  cv::circle(vis_img, p, 2, 128, cv::FILLED);
-    //}
+    // for (auto &p : contour) {
+    //   cv::circle(vis_img, p, 2, 128, cv::FILLED);
+    // }
 
-    //cv::resize(silhouette_image, vis_img, cv::Size(), 0.5, 0.5);
-    //cv::imshow("contour", vis_img);
-    //cv::waitKey();
+    // cv::resize(vis_img, vis_img, cv::Size(), 0.5, 0.5);
+    // cv::imshow("contour", vis_img);
+    // cv::waitKey();
 
     for (auto &point : contour) {
       if (IsContourPointValid(max_depth_difference, point, main_renderer,
@@ -529,15 +530,18 @@ bool RegionModel::GeneratePointData(
         valid_contour_points.push_back(point);
     }
 
-    // vis_img = silhouette_image;
+    //{
+    //   cv::Mat vis_img;
+    //   silhouette_image.copyTo(vis_img);
 
-    // for (auto &p : valid_contour_points) {
-    //   cv::circle(vis_img, p, 2, 128, cv::FILLED);
-    // }
+    //  for (auto &p : valid_contour_points) {
+    //    cv::circle(vis_img, p, 4, 128, cv::FILLED);
+    //  }
 
-    // cv::resize(silhouette_image, vis_img, cv::Size(), 0.5, 0.5);
-    // cv::imshow("valid contour", vis_img);
-    // cv::waitKey();
+    //  //cv::resize(vis_img, vis_img, cv::Size(), 0.5, 0.5);
+    //  cv::imshow("valid contour", vis_img);
+    //  cv::waitKey();
+    //}
   }
   *contour_length = float(valid_contour_points.size()) * pixel_to_meter;
   if (*contour_length == 0.0f) return true;
@@ -545,23 +549,32 @@ bool RegionModel::GeneratePointData(
   // Set up generator
   std::mt19937 generator{7};
   if (use_random_seed_)
-    generator.seed(
-        unsigned(std::chrono::system_clock::now().time_since_epoch().count()));
+    generator.seed(unsigned(std::chrono::system_clock::now().time_since_epoch().count()));
+
+  static constexpr std::size_t aligned_lines_num = 0;
+
+  auto num_data_points = data_points->size() - aligned_lines_num;
+  auto num_contour_points = valid_contour_points.size();
+
+  float step_f = static_cast<float>(num_contour_points) / num_data_points;
+  float contour_point_idx_f = 0;
 
   // Generate DataPoints from valid contour points
   int n_tries = 0;
-  for (auto data_point{begin(*data_points)}; data_point != end(*data_points);) {
+  for (auto data_point = data_points->begin(); data_point != data_points->end() - aligned_lines_num;) {
     // Limit the number of tries
     if (n_tries++ > kMaxPointSamplingTries) {
       *contour_length = 0.0f;
       return true;
     }
 
-    // Randomly sample point on contour and calculate 3D center
-    cv::Point2i center =
-        SampleContourPointCoordinate(valid_contour_points, generator);
-    Eigen::Vector3f center_f_camera{main_renderer.PointVector(center)};
-    data_point->center_f_body = camera2body_pose * center_f_camera;
+    // Randomly sample point on contour
+    // cv::Point2i center = SampleContourPointCoordinate(valid_contour_points, generator);
+    cv::Point2i center = valid_contour_points[static_cast<std::size_t>(contour_point_idx_f)];
+
+    // if (data_point->center_f_body.maxCoeff() >= 0.05) {
+    //   continue;
+    // }
 
     // auto center_u = center_f_camera(0) * main_renderer.intrinsics().fu /
     //                     center_f_camera(2) +
@@ -576,10 +589,15 @@ bool RegionModel::GeneratePointData(
 
     // Calculate contour segment and approximate normal vector
     std::vector<cv::Point2i> contour_segment;
-    if (!CalculateContourSegment(contours, center, &contour_segment)) continue;
+    if (!CalculateContourSegment(contours, center, &contour_segment))
+      continue;
     Eigen::Vector2f normal = ApproximateNormalVector(contour_segment);
     Eigen::Vector3f normal_f_camera{normal.x(), normal.y(), 0.0f};
     data_point->normal_f_body = camera2body_pose.rotation() * normal_f_camera;
+
+    // Calculate 3D center
+    Eigen::Vector3f center_f_camera = main_renderer.PointVector(center, cv::Point2f(normal.x(), normal.y()));
+    data_point->center_f_body = camera2body_pose * center_f_camera;
 
     // Calculate depth offset
     float pixel_to_meter = center_f_camera(2) / main_renderer.intrinsics().fu;
@@ -591,9 +609,47 @@ bool RegionModel::GeneratePointData(
                            center, normal, pixel_to_meter,
                            &data_point->foreground_distance,
                            &data_point->background_distance);
+
     data_point++;
     n_tries = 0;
+    contour_point_idx_f += step_f;
   }
+
+  std::partial_sort(data_points->begin(), data_points->begin() + aligned_lines_num, data_points->end(), [](DataPoint &left, DataPoint &right) {
+    return left.center_f_body.y() > right.center_f_body.y();
+  });
+
+  for (std::size_t front_idx = 0; front_idx < aligned_lines_num; ++front_idx) {
+    std::size_t back_idx = data_points->size() - 1 - front_idx;
+    auto &data_point = data_points->at(back_idx); 
+    
+    data_point = data_points->at(front_idx);
+    
+    auto center_body = data_point.center_f_body;
+    auto normal_body = Eigen::Vector3f(0, 1, 0);
+
+    auto start_cam = camera2body_pose.inverse() * center_body;
+    auto end_cam = camera2body_pose.inverse() * (center_body  + normal_body);
+
+    Eigen::Vector2f start_proj = start_cam.head<2>() / start_cam.z();
+    Eigen::Vector2f end_proj = end_cam.head<2>() / end_cam.z();
+
+    Eigen::Vector2f normal = end_proj - start_proj;
+    Eigen::Vector3f normal_f_camera{normal.x(), normal.y(), 0.0f};
+    data_point.normal_f_body = camera2body_pose.rotation() * normal_f_camera;
+
+    // Calculate depth offset
+    float pixel_to_meter = start_cam(2) / main_renderer.intrinsics().fu;
+    CalculateDepthOffsets(main_renderer, cv::Point2i(start_cam.x(), start_cam.y()), pixel_to_meter,
+                          &data_point.depth_offsets);
+
+    // Calculate foreground and background distance
+    CalculateLineDistances(main_renderer, associated_renderer_ptrs, contours,
+                           cv::Point2i(start_cam.x(), start_cam.y()), normal, pixel_to_meter,
+                           &data_point.foreground_distance,
+                           &data_point.background_distance);
+  }
+
   return true;
 }
 

@@ -58,8 +58,12 @@ namespace m3t {
 
         // jump back
         if (capture_.get(cv::CAP_PROP_POS_FRAMES) > frame_index) {
-            capture_.set(cv::CAP_PROP_POS_FRAMES,
-                         static_cast<double>(frame_index));
+            capture_.set(cv::CAP_PROP_POS_FRAMES, static_cast<double>(frame_index));
+        }
+
+        // jump forward if more than 50 frames behind
+        if (capture_.get(cv::CAP_PROP_POS_FRAMES) + 50 < frame_index) {
+            capture_.set(cv::CAP_PROP_POS_FRAMES, static_cast<double>(frame_index));     
         }
 
         // move forward
@@ -75,14 +79,13 @@ namespace m3t {
 
         if (current_frame.empty()) return false;
 
-        // denoise
-        //cv::fastNlMeansDenoisingColored(current_frame, current_frame, 10);
-
         // undistort
         cv::remap(current_frame, image_, undistort_rectify_map_x_,
                   undistort_rectify_map_y_, cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0, 255, 0));
-        //cv::undistort(current_frame, image_, camera_matrix_, distortion_coefficients_, camera_matrix_);
+
         
+        //cv::flip(image_, image_, 0);
+
         return true;
     }
 

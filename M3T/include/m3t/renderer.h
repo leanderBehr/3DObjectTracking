@@ -249,6 +249,7 @@ class FullDepthRenderer : public FullRenderer {
   float Depth(const cv::Point2i &image_coordinate) const;
   ushort DepthImageValue(const cv::Point2i &image_coordinate) const;
   Eigen::Vector3f PointVector(const cv::Point2i &image_coordinate) const;
+  Eigen::Vector3f PointVector(const cv::Point2i &image_coordinate, const cv::Point2f &normal) const;
 
  protected:
   // Constructors

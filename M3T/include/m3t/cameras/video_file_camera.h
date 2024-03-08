@@ -38,6 +38,25 @@ inline std::vector<steady_time_point> parse_timestamps(
   return result;
 }
 
+inline std::vector<steady_time_point> create_fixed_framerate_timestamps(std::filesystem::path const &video_file) {
+  auto capture = cv::VideoCapture(video_file.string());
+  capture.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+
+  assert(capture.isOpened());
+
+  double fps = capture.get(cv::CAP_PROP_FPS);
+  std::size_t total_frames = capture.get(cv::CAP_PROP_FRAME_COUNT);
+
+  std::vector<steady_time_point> time_stamps{total_frames};
+
+  auto increment = std::chrono::nanoseconds(std::chrono::seconds(1)) / fps;
+  for (std::size_t i = 0; i < total_frames; ++i) {
+    time_stamps[i] = steady_time_point(std::chrono::duration_cast<std::chrono::nanoseconds>(increment * i));
+  }
+
+  return time_stamps;
+}
+
 class VideoFileCamera : public ColorCamera {
  public:
   explicit VideoFileCamera(
@@ -76,16 +95,28 @@ class VideoFileCamera : public ColorCamera {
 inline std::vector<steady_time_point> getTimestampsFromConfig(std::filesystem::path const &config_path) {
   cv::FileStorage fs{};
   OpenYamlFileStorage(config_path, &fs);
-  std::filesystem::path timestamp_path;
-  ReadRequiredValueFromYaml(fs, "timestamp_path", &timestamp_path);
-  return parse_timestamps(timestamp_path);
+
+  if (fs["timestamp_path"].empty()) {
+    bool fixed_framerate = false;
+    ReadRequiredValueFromYaml(fs, "fixed_framerate", &fixed_framerate);
+    if (!fixed_framerate)
+      throw std::exception("Must have either timestamp_path or fixed_framerate = true");
+
+    std::filesystem::path video_path;
+    ReadOptionalValueFromYaml(fs, "video_path", &video_path);
+
+    return create_fixed_framerate_timestamps(video_path);
+  } else {
+    std::filesystem::path timestamp_path;
+    ReadOptionalValueFromYaml(fs, "timestamp_path", &timestamp_path);
+    return parse_timestamps(timestamp_path);
+  }
 }
 
 inline VideoFileCamera createVideoFileCameraFromConfig(
     std::filesystem::path const &config_path, Clock *clock) {
   std::string name;
   std::filesystem::path video_path;
-  std::filesystem::path timestamp_path;
   Intrinsics intrinsics{};
   std::vector<double> distortion_coefficients;
   auto camera2world_pose = m3t::Transform3fA::Identity();
@@ -95,15 +126,12 @@ inline VideoFileCamera createVideoFileCameraFromConfig(
 
   ReadRequiredValueFromYaml(fs, "name", &name);
   ReadRequiredValueFromYaml(fs, "video_path", &video_path);
-  ReadRequiredValueFromYaml(fs, "timestamp_path", &timestamp_path);
   ReadRequiredValueFromYaml(fs, "intrinsics", &intrinsics);
   ReadRequiredValueFromYaml(fs, "distortion_coefficients",
                             &distortion_coefficients);
   ReadOptionalValueFromYaml(fs, "camera2world_pose", &camera2world_pose);
 
-  auto camera =
-      VideoFileCamera{name,  video_path, parse_timestamps(timestamp_path),
-                      clock, intrinsics, distortion_coefficients};
+  auto camera = VideoFileCamera{name, video_path, getTimestampsFromConfig(config_path), clock, intrinsics, distortion_coefficients};
   camera.set_camera2world_pose(camera2world_pose);
 
   return camera;
