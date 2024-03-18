@@ -11,13 +11,14 @@ name: left_camera
 # Evaluations
 video_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Evaluation_Red\Hook\Video1.avi'
 timestamp_path: 'C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Evaluation_Red\Hook\Windows_timestamps_Video1.txt'
+flip: 0
   
 intrinsics:
-  f_u: 813.405922
-  f_v: 814.7103415
-  pp_x: 955.2861138
-  pp_y: 534.4625209
+  f_u: 804.519921562029
+  f_v: 805.339530829187
+  pp_x: 957.638869286923
+  pp_y: 545.250424536191
   width: 1920
   height: 1080
-distortion_coefficients: [-0.418753279081834,0.187401363603572,0.000143339697368425,-0.000954838892401051,-0.0394059401606923]
+distortion_coefficients: [-0.428821655612403,0.217500360502261,-0.00179570530609889,-0.00293197142741741,-0.0605663978878796]
 

@@ -63,7 +63,8 @@ class VideoFileCamera : public ColorCamera {
       std::string const &name, std::filesystem::path path,
       std::vector<std::chrono::steady_clock::time_point> frame_times,
       Clock *clock, Intrinsics intrinsics,
-      std::vector<double> distortion_coefficients);
+      std::vector<double> distortion_coefficients,
+      bool flip = false);
 
   // Setup method
   bool SetUp() override;
@@ -83,13 +84,13 @@ class VideoFileCamera : public ColorCamera {
   std::vector<steady_time_point> frame_times_;
   Clock *clock_;
 
-  cv::Mat camera_matrix_{};
   std::vector<double> distortion_coefficients_;
   cv::Mat undistort_rectify_map_x_;
   cv::Mat undistort_rectify_map_y_;
 
   cv::VideoCapture capture_;
   std::optional<std::size_t> current_frame_index_{};
+  bool flip_;
 };
 
 inline std::vector<steady_time_point> getTimestampsFromConfig(std::filesystem::path const &config_path) {
@@ -120,6 +121,7 @@ inline VideoFileCamera createVideoFileCameraFromConfig(
   Intrinsics intrinsics{};
   std::vector<double> distortion_coefficients;
   auto camera2world_pose = m3t::Transform3fA::Identity();
+  bool flip = false;
 
   cv::FileStorage fs{};
   OpenYamlFileStorage(config_path, &fs);
@@ -130,8 +132,9 @@ inline VideoFileCamera createVideoFileCameraFromConfig(
   ReadRequiredValueFromYaml(fs, "distortion_coefficients",
                             &distortion_coefficients);
   ReadOptionalValueFromYaml(fs, "camera2world_pose", &camera2world_pose);
+  ReadOptionalValueFromYaml(fs, "flip", &flip);
 
-  auto camera = VideoFileCamera{name, video_path, getTimestampsFromConfig(config_path), clock, intrinsics, distortion_coefficients};
+  auto camera = VideoFileCamera{name, video_path, getTimestampsFromConfig(config_path), clock, intrinsics, distortion_coefficients, flip};
   camera.set_camera2world_pose(camera2world_pose);
 
   return camera;
