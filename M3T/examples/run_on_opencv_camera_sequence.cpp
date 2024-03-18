@@ -213,12 +213,9 @@ void configure_tracker(m3t::Tracker &tracker) {
   if (s.n_update_iterations) tracker.set_n_update_iterations(*s.n_update_iterations);
 }
 
- constexpr std::optional<m3t::steady_time_point> reset_time = {};
+using namespace std::literals;
 
-// 1709216536070000000
-// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(1709216574204000000) - std::chrono::milliseconds(1000));
-// constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(1708706085354000000)) - std::chrono::milliseconds(100);
-
+constexpr std::optional<m3t::steady_time_point> reset_time = {};
 // coated, cot, no trocar, no bone, combined => z-rotation
 // constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(40200000000)) - std::chrono::milliseconds(500);
 // constexpr std::optional<m3t::steady_time_point> reset_time = m3t::steady_time_point(std::chrono::nanoseconds(40200000000)) - std::chrono::milliseconds(500);
@@ -502,15 +499,15 @@ int main(int argc, char *argv[]) {
   //  tracker_ptr->AddSubscriber(std::shared_ptr<m3t::Subscriber>{sub});
   //}
 
-  if constexpr (kLogPoses) {
-    auto body_ptr = *std::ranges::find_if(renderer_geometry_ptr->body_ptrs(), [=](auto &d) {
-      return d->name() == body_of_interest;
-    });
+  auto body_ptr = *std::ranges::find_if(renderer_geometry_ptr->body_ptrs(), [=](auto &d) {
+    return d->name() == body_of_interest;
+  });
 
+  if constexpr (kLogPoses) {
     tracker_ptr->AddSubscriber(std::make_shared<m3t::PoseLogger>(
         cameras_ptr->clock.get(),
         body_ptr,
-        std::filesystem::path(R"(C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Evaluation\Hook\VideoTrackingPoses.txt)")));
+        std::filesystem::path(R"(C:\Users\leander.behr\OneDrive - Brainlab AG\IDP\Endoscope_Recordings\Evaluation_Red\Hook\VideoTrackingPoses_1x_test.txt)")));
   }
 
   // Start tracking
@@ -532,7 +529,19 @@ int main(int argc, char *argv[]) {
       // region_ptr->set_visualize_gradient_optimization(!region_ptr->visualize_gradient_optimization());
       // region_ptr->set_visualize_hessian_optimization(!region_ptr->visualize_hessian_optimization());
       // region_ptr->set_visualize_points_optimization(!region_ptr->visualize_points_optimization());
-       region_ptr->set_visualize_pose_result(!region_ptr->visualize_pose_result());
+      region_ptr->set_visualize_pose_result(!region_ptr->visualize_pose_result());
+    }
+  });
+
+  tracker_ptr->AddKeyCallback("LogTip", [&, prev = Eigen::Vector3f()](char key) mutable {
+    if (key == 'p') {
+      auto pose = body_ptr->body2world_pose();
+      auto tip = Eigen::Vector3f(0, 0.26037, 0);
+      Eigen::Vector3f tip_world = pose * tip;
+      auto dist = (tip_world - prev).norm();
+      prev = tip_world;
+      std::cout << "dist " << dist * 1000 << "\n";
+      std::cout << tip_world.matrix() * 1000 << "\n\n";
     }
   });
 
